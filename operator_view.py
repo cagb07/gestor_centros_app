@@ -1,4 +1,4 @@
-﻿import streamlit as st
+import streamlit as st
 import pandas as pd
 import database
 import json
@@ -128,7 +128,7 @@ def show_ui(df_centros):
         if st.button("Adjuntar Centro Seleccionado", key="btn_adjuntar_operator"):
             if centro_para_adjuntar:
                 datos_centro_seleccionado = df_centros[
-                    df_centros['CENTRO_EDUCATIVO'] == centro_para_juntar
+                    df_centros['CENTRO_EDUCATIVO'] == centro_para_adjuntar
                 ].iloc[0]
                 
                 st.session_state.centro_adjunto = datos_centro_seleccionado.to_dict()
