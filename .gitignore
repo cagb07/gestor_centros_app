@@ -1,0 +1,14 @@
+﻿# Archivos de entorno virtual
+venv/
+*.venv/
+.venv/
+
+# Archivos de secretos locales
+.streamlit/secrets.toml
+
+# Archivos compilados de Python
+__pycache__/
+*.pyc
+
+# Archivos de sistema
+.DS_Store
