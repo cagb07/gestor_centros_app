@@ -53,12 +53,13 @@ def create_tables():
                 );
             """)
             
-            # Tabla de Usuarios
+            # Tabla de Usuarios (con reseteo)
+            cur.execute("DROP TABLE IF EXISTS usuarios CASCADE;")
             cur.execute("""
-                CREATE TABLE IF NOT EXISTS usuarios (
+                CREATE TABLE usuarios (
                     id SERIAL PRIMARY KEY,
                     username VARCHAR(50) UNIQUE NOT NULL,
-                    password_hash BYTEA NOT NULL,
+                    password_hash VARCHAR(255) NOT NULL,
                     role VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'operador')),
                     full_name VARCHAR(100)
                 );

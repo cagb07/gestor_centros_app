@@ -4,8 +4,7 @@ import unittest
 
 # Add the parent directory to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-from auth import hash_password, check_password
+main
 
 class TestAuth(unittest.TestCase):
 
