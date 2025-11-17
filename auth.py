@@ -1,11 +1,9 @@
-﻿import bcrypt
+from werkzeug.security import generate_password_hash, check_password_hash
 
 def hash_password(password):
     """Genera un hash seguro para una contraseña."""
-    # .encode('utf-8') es crucial para bcrypt
-    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+    return generate_password_hash(password)
 
-def check_password(password, hashed_password_bytes):
+def check_password(password, hashed_password):
     """Verifica una contraseña contra un hash existente."""
-    # El hash de la BD (hashed_password_bytes) ya está en 'bytes'
-    return bcrypt.checkpw(password.encode('utf-8'), hashed_password_bytes)
+    return check_password_hash(hashed_password, password)
