@@ -86,6 +86,7 @@ def show_ui(df_centros):
         with st.form("new_template_form"):
             st.subheader("Detalles de la Plantilla")
             
+            area_options = {}  # Initialize to an empty dictionary
             try:
                 areas_list = database.get_all_areas()
                 area_options = {area['id']: area['name'] for area in areas_list}
