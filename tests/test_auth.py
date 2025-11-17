@@ -4,18 +4,7 @@ import unittest
 
 # Add the parent directory to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-try:
-    from auth import hash_password, check_password
-except ImportError:
-    print("=" * 50)
-    print("❌ ERROR: Dependencia no encontrada (posiblemente 'Werkzeug').")
-    print("Por favor, instala las dependencias del proyecto ejecutando:")
-    print("\npip install -r requirements.txt\n")
-    print("Asegúrate de tener tu entorno virtual activado.")
-    print("=" * 50)
-    sys.exit(1)
-
+main
 
 class TestAuth(unittest.TestCase):
 
