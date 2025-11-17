@@ -41,15 +41,18 @@ def _render_form_from_structure(structure):
         # Obtener el valor por defecto del diccionario prefill_data
         default_value = prefill_data.get(label, None)
         
+        # Add a visual indicator for required fields
+        display_label = f"{label}*" if required else label
+
         if field_type == "Texto":
-            form_data[label] = st.text_input(label, value=default_value, key=field_key)
+            form_data[label] = st.text_input(display_label, value=default_value, key=field_key)
         elif field_type == "Área de Texto":
-            form_data[label] = st.text_area(label, value=default_value, key=field_key)
+            form_data[label] = st.text_area(display_label, value=default_value, key=field_key)
         elif field_type == "Fecha":
-            form_data[label] = st.date_input(label, key=field_key)
+            form_data[label] = st.date_input(display_label, key=field_key)
         
         elif field_type == "Tabla Dinámica":
-            st.subheader(label)
+            st.subheader(display_label)
             df_editor = pd.DataFrame([{"Columna 1": "", "Columna 2": ""}])
             form_data[label] = st.data_editor(
                 df_editor, 
@@ -58,7 +61,7 @@ def _render_form_from_structure(structure):
             ).to_dict('records')
             
         elif field_type == "Geolocalización":
-            st.subheader(label)
+            st.subheader(display_label)
             map_center = [9.9333, -84.0833] # Centrar en Costa Rica
             map_data = st_folium(center=map_center, zoom=7, key=field_key, width=700, height=400)
             
@@ -69,7 +72,7 @@ def _render_form_from_structure(structure):
             form_data[label] = coords
             
         elif field_type == "Firma":
-            st.subheader(label)
+            st.subheader(display_label)
             canvas_result = st_canvas(
                 fill_color="rgba(255, 165, 0, 0.3)",
                 stroke_width=3,
@@ -86,14 +89,23 @@ def _render_form_from_structure(structure):
                 form_data[label] = None
         
         elif field_type == "Carga de Imagen":
-            st.subheader(label)
-            uploaded_file = st.file_uploader(label, type=["png", "jpg", "jpeg"], key=field_key)
+            st.subheader(display_label)
+            uploaded_file = st.file_uploader(display_label, type=["png", "jpg", "jpeg"], key=field_key)
             if uploaded_file:
                 form_data[label] = uploaded_file.name
             else:
                 form_data[label] = None
                 
     return form_data
+
+def _validate_form(form_data, structure):
+    """Checks if all required fields are filled."""
+    for field in structure:
+        if field["Requerido"]:
+            label = field["Etiqueta del Campo"]
+            if form_data[label] is None or (isinstance(form_data[label], str) and not form_data[label].strip()):
+                return False, f"El campo '{label}' es requerido."
+    return True, ""
 
 
 def show_ui(df_centros):
@@ -199,19 +211,23 @@ def show_ui(df_centros):
                 submitted = st.form_submit_button("✅ Enviar Formulario")
             
             if submitted:
-                try:
-                    database.save_submission(
-                        selected_template_id,
-                        st.session_state["user_id"],
-                        form_data
-                    )
-                    st.success("¡Formulario enviado con éxito!")
-                    st.balloons()
-                    # Limpiar el centro adjunto después de un envío exitoso
-                    if "centro_adjunto" in st.session_state:
-                         st.session_state.centro_adjunto = None
-                except Exception as e:
-                    st.error(f"Error al guardar el envío: {e}")
+                is_valid, error_message = _validate_form(form_data, form_structure)
+                if is_valid:
+                    try:
+                        database.save_submission(
+                            selected_template_id,
+                            st.session_state["user_id"],
+                            form_data
+                        )
+                        st.success("¡Formulario enviado con éxito!")
+                        st.balloons()
+                        # Limpiar el centro adjunto después de un envío exitoso
+                        if "centro_adjunto" in st.session_state:
+                             st.session_state.centro_adjunto = None
+                    except Exception as e:
+                        st.error(f"Error al guardar el envío: {e}")
+                else:
+                    st.error(error_message)
 
         except Exception as e:
             st.error(f"Error cargando formularios: {e}")

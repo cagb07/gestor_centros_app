@@ -113,8 +113,10 @@ def create_admin_user(username, password, full_name):
         conn.commit()
         print(f"✅ Usuario admin '{username}' creado.")
     except psycopg2.IntegrityError:
+        conn.rollback()
         print(f"⚠️  Usuario admin '{username}' ya existe. No se creó de nuevo.")
     except Exception as e:
+        conn.rollback()
         print(f"❌ Error creando admin: {e}")
     # Sin conn.close()
 
@@ -162,10 +164,14 @@ def get_all_areas():
 
 def save_form_template(name, structure, user_id, area_id):
     conn = get_db_connection()
-    with conn.cursor() as cur:
-        cur.execute("INSERT INTO form_templates (name, structure, created_by_user_id, area_id) VALUES (%s, %s, %s, %s)", 
-                    (name, json.dumps(structure), user_id, area_id))
-    conn.commit()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("INSERT INTO form_templates (name, structure, created_by_user_id, area_id) VALUES (%s, %s, %s, %s)",
+                        (name, json.dumps(structure), user_id, area_id))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise e
     # Sin conn.close()
 
 def get_templates_by_area(area_id):
@@ -188,10 +194,14 @@ def get_template_structure(template_id):
 
 def save_submission(template_id, user_id, data):
     conn = get_db_connection()
-    with conn.cursor() as cur:
-        cur.execute("INSERT INTO form_submissions (template_id, user_id, data) VALUES (%s, %s, %s)", 
-                    (template_id, user_id, json.dumps(data, default=str)))
-    conn.commit()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("INSERT INTO form_submissions (template_id, user_id, data) VALUES (%s, %s, %s)",
+                        (template_id, user_id, json.dumps(data, default=str)))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise e
     # Sin conn.close()
 
 def get_submissions_by_user(user_id):
