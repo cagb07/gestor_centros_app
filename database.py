@@ -58,7 +58,7 @@ def create_tables():
                 CREATE TABLE IF NOT EXISTS usuarios (
                     id SERIAL PRIMARY KEY,
                     username VARCHAR(50) UNIQUE NOT NULL,
-                    password_hash BYTEA NOT NULL,
+                    password_hash VARCHAR(255) NOT NULL,
                     role VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'operador')),
                     full_name VARCHAR(100)
                 );
@@ -113,8 +113,10 @@ def create_admin_user(username, password, full_name):
         conn.commit()
         print(f"✅ Usuario admin '{username}' creado.")
     except psycopg2.IntegrityError:
+        conn.rollback()
         print(f"⚠️  Usuario admin '{username}' ya existe. No se creó de nuevo.")
     except Exception as e:
+        conn.rollback()
         print(f"❌ Error creando admin: {e}")
     # Sin conn.close()
 
@@ -162,10 +164,14 @@ def get_all_areas():
 
 def save_form_template(name, structure, user_id, area_id):
     conn = get_db_connection()
-    with conn.cursor() as cur:
-        cur.execute("INSERT INTO form_templates (name, structure, created_by_user_id, area_id) VALUES (%s, %s, %s, %s)", 
-                    (name, json.dumps(structure), user_id, area_id))
-    conn.commit()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("INSERT INTO form_templates (name, structure, created_by_user_id, area_id) VALUES (%s, %s, %s, %s)",
+                        (name, json.dumps(structure), user_id, area_id))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise e
     # Sin conn.close()
 
 def get_templates_by_area(area_id):
@@ -188,10 +194,14 @@ def get_template_structure(template_id):
 
 def save_submission(template_id, user_id, data):
     conn = get_db_connection()
-    with conn.cursor() as cur:
-        cur.execute("INSERT INTO form_submissions (template_id, user_id, data) VALUES (%s, %s, %s)", 
-                    (template_id, user_id, json.dumps(data, default=str)))
-    conn.commit()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("INSERT INTO form_submissions (template_id, user_id, data) VALUES (%s, %s, %s)",
+                        (template_id, user_id, json.dumps(data, default=str)))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise e
     # Sin conn.close()
 
 def get_submissions_by_user(user_id):
@@ -200,3 +210,46 @@ def get_submissions_by_user(user_id):
         SELECT s.id, t.name, s.created_at, s.data FROM form_submissions s 
         JOIN form_templates t ON s.template_id = t.id WHERE s.user_id = %s ORDER BY s.created_at DESC
     """, conn, params=(user_id,))
+    return df
+
+def get_total_submission_count():
+    conn = get_db_connection()
+    with conn.cursor() as cur:
+        cur.execute("SELECT COUNT(*) FROM form_submissions")
+        count = cur.fetchone()[0]
+    return count
+
+def get_submission_count_by_area():
+    conn = get_db_connection()
+    df = pd.read_sql("""
+        SELECT a.area_name, COUNT(s.id) as submission_count
+        FROM form_submissions s
+        JOIN form_templates t ON s.template_id = t.id
+        JOIN form_areas a ON t.area_id = a.id
+        GROUP BY a.area_name
+        ORDER BY submission_count DESC
+    """, conn)
+    return df
+
+def get_submission_count_by_user():
+    conn = get_db_connection()
+    df = pd.read_sql("""
+        SELECT u.full_name, COUNT(s.id) as submission_count
+        FROM form_submissions s
+        JOIN usuarios u ON s.user_id = u.id
+        GROUP BY u.full_name
+        ORDER BY submission_count DESC
+    """, conn)
+    return df
+
+def get_all_submissions_with_details():
+    conn = get_db_connection()
+    df = pd.read_sql("""
+        SELECT s.id, u.full_name as user_name, t.name as template_name, a.area_name, s.created_at
+        FROM form_submissions s
+        JOIN usuarios u ON s.user_id = u.id
+        JOIN form_templates t ON s.template_id = t.id
+        JOIN form_areas a ON t.area_id = a.id
+        ORDER BY s.created_at DESC
+    """, conn)
+    return df
