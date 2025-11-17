@@ -86,6 +86,7 @@ def show_ui(df_centros):
         with st.form("new_template_form"):
             st.subheader("Detalles de la Plantilla")
             
+            area_options = {}  # Initialize to an empty dictionary
             try:
                 areas_list = database.get_all_areas()
                 area_options = {area['id']: area['name'] for area in areas_list}
@@ -157,8 +158,8 @@ def show_ui(df_centros):
             area_name = st.text_input("Nombre del Área")
             area_desc = st.text_area("Descripción")
             if st.form_submit_button("Crear Área"):
-                if area_name:
-                    success, message = database.create_area(area_name, area_desc)
+                if area_name and area_name.strip():
+                    success, message = database.create_area(area_name.strip(), area_desc)
                     if success:
                         st.success(message)
                     else:
@@ -190,11 +191,14 @@ def show_ui(df_centros):
             
             if st.form_submit_button("Crear Usuario"):
                 if all([full_name, username, role, password]):
-                    success, message = database.create_user(username, password, role, full_name)
-                    if success:
-                        st.success(message)
+                    if len(password) < 8:
+                        st.error("La contraseña debe tener al menos 8 caracteres.")
                     else:
-                        st.error(message)
+                        success, message = database.create_user(username, password, role, full_name)
+                        if success:
+                            st.success(message)
+                        else:
+                            st.error(message)
                 else:
                     st.error("Todos los campos son requeridos.")
         
