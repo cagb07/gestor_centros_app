@@ -1,6 +1,16 @@
 ﻿import os
 import sys
-import psycopg2
+
+try:
+    import psycopg2
+except ImportError:
+    print("=" * 50)
+    print("❌ ERROR: Dependencia 'psycopg2' no encontrada.")
+    print("Por favor, instala las dependencias del proyecto ejecutando:")
+    print("\npip install -r requirements.txt\n")
+    print("Asegúrate de tener tu entorno virtual activado.")
+    print("=" * 50)
+    sys.exit(1)
 
 # 1. Cargar configuración MANUALMENTE para evitar errores de Streamlit
 print("--- INICIALIZADOR DE BASE DE DATOS ---")

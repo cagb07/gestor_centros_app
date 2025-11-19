@@ -47,14 +47,22 @@ def main_app():
     @st.cache_data
     def load_csv_data(file_path):
         try:
-            # Usamos 'cp1252' (Windows-Latin-1) que es común para Excel en español.
-            return pd.read_csv(file_path, encoding='cp1252')
+            # Intentar con UTF-8, que es el estándar más común.
+            return pd.read_csv(file_path, encoding='utf-8')
+        except UnicodeDecodeError:
+            try:
+                # Si UTF-8 falla, intentar con Latin-1, que es común en Europa/América.
+                return pd.read_csv(file_path, encoding='latin-1')
+            except Exception as e:
+                st.error(f"Error al leer el CSV con codificaciones alternativas: {e}")
+                st.info("Verifica que el archivo no esté corrupto.")
+                return pd.DataFrame()
         except FileNotFoundError:
             st.error(f"Error: No se encontró el archivo {file_path}")
             st.info("Asegúrate de que 'datos_centros.csv' esté en la carpeta principal del proyecto.")
             return pd.DataFrame()
         except Exception as e:
-            st.error(f"Error al leer el CSV: {e}")
+            st.error(f"Error inesperado al leer el CSV: {e}")
             st.info("Verifica que el archivo no esté corrupto.")
             return pd.DataFrame()
 
