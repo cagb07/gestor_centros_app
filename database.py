@@ -116,6 +116,9 @@ def create_admin_user(username, password, full_name):
     except psycopg2.IntegrityError:
         conn.rollback()
         print(f"⚠️  Usuario admin '{username}' ya existe. No se creó de nuevo.")
+    except psycopg2.DatabaseError as e:
+        conn.rollback()
+        print(f"❌ Error de base de datos creando admin: {e}")
     except Exception as e:
         conn.rollback()
         print(f"❌ Error creando admin: {e}")
@@ -133,6 +136,12 @@ def create_user(username, password, role, full_name):
     except psycopg2.IntegrityError:
         conn.rollback()
         return False, "El usuario ya existe."
+    except psycopg2.DatabaseError as e:
+        conn.rollback()
+        return False, f"Error de base de datos: {str(e)[:50]}"
+    except Exception as e:
+        conn.rollback()
+        return False, f"Error: {str(e)[:50]}"
     # Sin conn.close()
 
 def get_all_users():

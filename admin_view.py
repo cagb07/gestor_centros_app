@@ -1,6 +1,8 @@
 ﻿import streamlit as st
 import pandas as pd
 import database
+import auth
+import config
 import json
 
 def show_ui(df_centros):
@@ -26,47 +28,104 @@ def show_ui(df_centros):
             envios_area = database.get_submission_count_by_area()
             envios_usuario = database.get_submission_count_by_user()
             
-            st.metric("Total de Formularios Enviados", total_envios)
+            # Mostrar métricas principales en fila
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("📋 Total de Envíos", total_envios)
+            with col2:
+                try:
+                    areas_count = len(database.get_all_areas())
+                    st.metric("🗂️ Áreas Creadas", areas_count)
+                except:
+                    st.metric("🗂️ Áreas Creadas", 0)
+            with col3:
+                try:
+                    users_count = len(database.get_all_users())
+                    st.metric("👥 Usuarios", users_count)
+                except:
+                    st.metric("👥 Usuarios", 0)
             
+            st.divider()
+            
+            # Gráficos y tablas
             col1, col2 = st.columns(2)
             with col1:
-                st.subheader("Envíos por Área")
+                st.subheader("📊 Envíos por Área")
                 if not envios_area.empty:
-                    st.bar_chart(envios_area.set_index("area_name"))
+                    st.bar_chart(envios_area.set_index("area_name")["submission_count"])
                 else:
                     st.info("Aún no hay envíos.")
             
             with col2:
-                st.subheader("Actividad por Usuario")
+                st.subheader("👥 Actividad por Usuario")
                 if not envios_usuario.empty:
-                    st.dataframe(envios_usuario, use_container_width=True)
+                    st.dataframe(envios_usuario, use_container_width=True, hide_index=True)
                 else:
                     st.info("Aún no hay envíos.")
+            
+            # Últimos envíos
+            st.divider()
+            st.subheader("📋 Últimos Envíos Recibidos")
+            try:
+                last_submissions = database.get_all_submissions_with_details()
+                if not last_submissions.empty:
+                    st.dataframe(last_submissions.head(10), use_container_width=True, hide_index=True)
+                else:
+                    st.info("No hay envíos todavía.")
+            except Exception as e:
+                st.warning(f"No se pueden cargar los últimos envíos: {str(e)[:50]}")
                     
         except Exception as e:
-            st.error(f"Error cargando el dashboard: {e}")
+            st.error(f"❌ Error cargando el dashboard: {str(e)[:100]}")
 
     # --- 2. BUSCADOR DE CENTROS (CON LÓGICA DE ADJUNTAR) ---
     with tab_buscador:
-        st.header("Consulta de Centros Educativos")
-        st.info("Estos son los datos originales del archivo CSV.")
-        st.dataframe(df_centros, use_container_width=True)
+        st.header("🔎 Consulta de Centros Educativos")
+        
+        # Filtros de búsqueda
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            search_term = st.text_input("🔍 Buscar por nombre:", placeholder="Ej: Científico")
+        with col2:
+            provincia_filter = st.selectbox("📍 Filtrar por provincia:", 
+                                           ["Todas"] + sorted(df_centros['PROVINCIA'].unique().tolist()))
+        with col3:
+            tipo_institucion = st.selectbox("🏢 Filtrar por tipo:",
+                                          ["Todos"] + sorted(df_centros['TIPO_INSTITUCION'].unique().tolist()))
+        
+        # Aplicar filtros
+        df_filtered = df_centros.copy()
+        
+        if search_term:
+            df_filtered = df_filtered[
+                df_filtered['CENTRO_EDUCATIVO'].str.contains(search_term, case=False, na=False)
+            ]
+        
+        if provincia_filter != "Todas":
+            df_filtered = df_filtered[df_filtered['PROVINCIA'] == provincia_filter]
+        
+        if tipo_institucion != "Todos":
+            df_filtered = df_filtered[df_filtered['TIPO_INSTITUCION'] == tipo_institucion]
+        
+        # Mostrar resultados
+        st.info(f"📊 Mostrando {len(df_filtered)} de {len(df_centros)} centros")
+        st.dataframe(df_filtered, use_container_width=True, height=300)
         
         st.divider()
         st.subheader("📎 Adjuntar Centro a un Formulario")
-        st.write("Seleccione un centro de la lista para pre-llenar sus datos en un nuevo formulario.")
+        st.write("Seleccione un centro para pre-llenar sus datos en un nuevo formulario.")
 
         lista_nombres_centros = sorted(df_centros['CENTRO_EDUCATIVO'].unique().tolist())
 
         centro_para_adjuntar = st.selectbox(
-            "Escriba o seleccione el nombre del centro que desea adjuntar:",
+            "Seleccione el centro que desea adjuntar:",
             options=lista_nombres_centros,
             index=None,
-            placeholder="Seleccione un centro...",
+            placeholder="Escriba o seleccione un centro...",
             key="admin_attach_selectbox"
         )
 
-        if st.button("Adjuntar Centro Seleccionado", key="btn_adjuntar_admin"):
+        if st.button("✅ Adjuntar Centro Seleccionado", key="btn_adjuntar_admin"):
             if centro_para_adjuntar:
                 datos_centro_seleccionado = df_centros[
                     df_centros['CENTRO_EDUCATIVO'] == centro_para_adjuntar
@@ -74,10 +133,15 @@ def show_ui(df_centros):
                 
                 st.session_state.centro_adjunto = datos_centro_seleccionado.to_dict()
                 
-                st.success(f"¡{centro_para_adjuntar} adjuntado!")
-                st.info("Los datos se pre-llenarán en la pestaña 'Llenar Formulario' (vista de Operador).")
+                st.success(f"✅ ¡Centro '{centro_para_adjuntar}' adjuntado!")
+                st.info("💡 Los datos se pre-llenarán automáticamente en el formulario.")
+                
+                # Mostrar datos del centro
+                with st.expander("Ver datos del centro adjunto"):
+                    for col in datos_centro_seleccionado.index:
+                        st.write(f"**{col}**: {datos_centro_seleccionado[col]}")
             else:
-                st.warning("Por favor, seleccione un centro de la lista.")
+                st.warning("⚠️ Por favor, seleccione un centro de la lista.")
 
     # --- 3. CREADOR DE FORMULARIOS ---
     with tab_creator:
@@ -107,8 +171,6 @@ def show_ui(df_centros):
             st.subheader("Constructor de Campos")
             st.write("Defina los campos que tendrá este formulario.")
             
-            field_types = ["Texto", "Área de Texto", "Fecha", "Tabla Dinámica", "Geolocalización", "Firma", "Carga de Imagen"]
-            
             if 'template_fields' not in st.session_state:
                 st.session_state.template_fields = pd.DataFrame(
                     [
@@ -123,31 +185,48 @@ def show_ui(df_centros):
                 num_rows="dynamic",
                 column_config={
                     "Etiqueta del Campo": st.column_config.TextColumn(required=True),
-                    "Tipo de Campo": st.column_config.SelectboxColumn(options=field_types, required=True),
+                    "Tipo de Campo": st.column_config.SelectboxColumn(options=config.FIELD_TYPES, required=True),
                     "Requerido": st.column_config.CheckboxColumn(default=False)
                 },
                 use_container_width=True,
                 height=300
             )
             
-            submitted = st.form_submit_button("Guardar Plantilla")
+            col1, col2 = st.columns(2)
+            with col1:
+                submitted = st.form_submit_button("✅ Guardar Plantilla")
+            with col2:
+                clear_form = st.form_submit_button("🔄 Limpiar Formulario")
             
             if submitted:
-                if not template_name or st.session_state.template_fields.empty:
-                    st.error("El nombre y al menos un campo son requeridos.")
+                if not template_name or not template_name.strip():
+                    st.error("El nombre de la plantilla es requerido.")
+                elif len(template_name.strip()) > config.MAX_TEMPLATE_NAME_LENGTH:
+                    st.error(f"El nombre no puede exceder {config.MAX_TEMPLATE_NAME_LENGTH} caracteres.")
+                elif st.session_state.template_fields.empty:
+                    st.error("Debe agregar al menos un campo.")
                 else:
                     structure = st.session_state.template_fields.to_dict('records')
                     try:
                         database.save_form_template(
-                            template_name,
+                            template_name.strip(),
                             structure,
                             st.session_state["user_id"],
                             template_area_id
                         )
-                        st.success(f"¡Plantilla '{template_name}' guardada!")
+                        st.success(f"¡Plantilla '{template_name.strip()}' guardada!")
                         del st.session_state.template_fields
+                        st.rerun()
                     except Exception as e:
                         st.error(f"Error al guardar: {e}")
+            
+            if clear_form:
+                st.session_state.template_fields = pd.DataFrame(
+                    [
+                        {"Etiqueta del Campo": "", "Tipo de Campo": "Texto", "Requerido": False},
+                    ]
+                )
+                st.rerun()
 
     # --- 4. GESTIÓN DE ÁREAS ---
     with tab_areas:
@@ -158,14 +237,16 @@ def show_ui(df_centros):
             area_name = st.text_input("Nombre del Área")
             area_desc = st.text_area("Descripción")
             if st.form_submit_button("Crear Área"):
-                if area_name and area_name.strip():
-                    success, message = database.create_area(area_name.strip(), area_desc)
+                if not area_name or not area_name.strip():
+                    st.error("El nombre del área es requerido.")
+                elif len(area_name.strip()) > config.MAX_AREA_NAME_LENGTH:
+                    st.error(f"El nombre del área no puede exceder {config.MAX_AREA_NAME_LENGTH} caracteres.")
+                else:
+                    success, message = database.create_area(area_name.strip(), area_desc.strip())
                     if success:
                         st.success(message)
                     else:
                         st.error(message)
-                else:
-                    st.error("El nombre es requerido.")
         
         st.divider()
         st.subheader("Áreas Existentes")
@@ -186,21 +267,30 @@ def show_ui(df_centros):
                 full_name = st.text_input("Nombre Completo")
                 username = st.text_input("Nombre de Usuario (para login)")
             with col2:
-                role = st.selectbox("Rol", ["operador", "admin"])
+                role = st.selectbox("Rol", config.ALLOWED_ROLES)
                 password = st.text_input("Contraseña", type="password")
             
             if st.form_submit_button("Crear Usuario"):
-                if all([full_name, username, role, password]):
-                    if len(password) < 8:
-                        st.error("La contraseña debe tener al menos 8 caracteres.")
-                    else:
-                        success, message = database.create_user(username, password, role, full_name)
-                        if success:
-                            st.success(message)
-                        else:
-                            st.error(message)
+                # Validar nombre completo
+                is_valid, error_msg = auth.validate_full_name(full_name)
+                if not is_valid:
+                    st.error(error_msg)
                 else:
-                    st.error("Todos los campos son requeridos.")
+                    # Validar nombre de usuario
+                    is_valid, error_msg = auth.validate_username(username)
+                    if not is_valid:
+                        st.error(error_msg)
+                    else:
+                        # Validar contraseña
+                        is_valid, error_msg = auth.validate_password(password)
+                        if not is_valid:
+                            st.error(error_msg)
+                        else:
+                            success, message = database.create_user(username.strip(), password, role, full_name.strip())
+                            if success:
+                                st.success(message)
+                            else:
+                                st.error(message)
         
         st.divider()
         st.subheader("Usuarios Existentes")
@@ -212,12 +302,58 @@ def show_ui(df_centros):
 
     # --- 6. REVISIÓN DE ENVÍOS ---
     with tab_review:
-        st.header("Revisión de Todos los Envíos")
+        st.header("📋 Revisión de Todos los Envíos")
+        
         try:
             all_submissions_df = database.get_all_submissions_with_details()
+            
             if all_submissions_df.empty:
-                st.info("Aún no se han realizado envíos de formularios.")
+                st.info("ℹ️ Aún no se han realizado envíos de formularios.")
             else:
-                st.dataframe(all_submissions_df, use_container_width=True)
+                # Estadísticas rápidas
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("📝 Total de Envíos", len(all_submissions_df))
+                with col2:
+                    st.metric("📅 Últimos 24h", 
+                             len(all_submissions_df[all_submissions_df['created_at'] > pd.Timestamp.now() - pd.Timedelta(days=1)]))
+                with col3:
+                    st.metric("🏢 Áreas Activas", all_submissions_df['area_name'].nunique())
+                
+                st.divider()
+                
+                # Filtros
+                col1, col2 = st.columns(2)
+                with col1:
+                    area_filter = st.multiselect(
+                        "Filtrar por Área:",
+                        all_submissions_df['area_name'].unique(),
+                        default=all_submissions_df['area_name'].unique()
+                    )
+                with col2:
+                    user_filter = st.multiselect(
+                        "Filtrar por Usuario:",
+                        all_submissions_df['user_name'].unique(),
+                        default=all_submissions_df['user_name'].unique()
+                    )
+                
+                # Aplicar filtros
+                df_filtered = all_submissions_df[
+                    (all_submissions_df['area_name'].isin(area_filter)) &
+                    (all_submissions_df['user_name'].isin(user_filter))
+                ]
+                
+                # Mostrar tabla
+                st.subheader(f"Mostrando {len(df_filtered)} envíos")
+                st.dataframe(df_filtered, use_container_width=True, hide_index=True, height=400)
+                
+                # Opción de descargar
+                csv_download = df_filtered.to_csv(index=False)
+                st.download_button(
+                    label="📥 Descargar como CSV",
+                    data=csv_download,
+                    file_name="envios_formularios.csv",
+                    mime="text/csv"
+                )
         except Exception as e:
-            st.error(f"Error al cargar envíos: {e}")
+            st.error(f"❌ Error al cargar envíos: {str(e)[:100]}")

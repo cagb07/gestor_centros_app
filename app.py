@@ -4,6 +4,8 @@ import database
 import auth
 import admin_view
 import operator_view
+import config
+import psycopg2
 
 # Configuración de la página (¡llamarla primero!)
 st.set_page_config(page_title="Gestor de Centros", layout="wide", initial_sidebar_state="collapsed")
@@ -19,18 +21,28 @@ def login_screen():
         submitted = st.form_submit_button("Ingresar")
 
     if submitted:
-        user_data = database.get_user(username)
-        
-        if user_data and auth.check_password(password, user_data["password_hash"]):
-            # Login exitoso
-            st.session_state["logged_in"] = True
-            st.session_state["user_id"] = user_data["id"]
-            st.session_state["username"] = user_data["username"]
-            st.session_state["role"] = user_data["role"]
-            st.session_state["full_name"] = user_data["full_name"]
-            st.rerun()
+        if not username or not password:
+            st.error("Por favor, completa todos los campos.")
         else:
-            st.error("Usuario o contraseña incorrectos")
+            try:
+                user_data = database.get_user(username)
+                
+                if user_data and auth.check_password(password, user_data["password_hash"]):
+                    # Login exitoso
+                    st.session_state["logged_in"] = True
+                    st.session_state["user_id"] = user_data["id"]
+                    st.session_state["username"] = user_data["username"]
+                    st.session_state["role"] = user_data["role"]
+                    st.session_state["full_name"] = user_data["full_name"]
+                    st.rerun()
+                else:
+                    st.error("❌ Usuario o contraseña incorrectos")
+            except psycopg2.OperationalError as e:
+                st.error("❌ Error de conexión a la base de datos")
+                st.info("Verifica que la base de datos esté disponible.")
+            except Exception as e:
+                st.error(f"❌ Error inesperado: {str(e)[:100]}")
+                st.info("Por favor, intenta más tarde.")
 
 # --- APLICACIÓN PRINCIPAL (POST-LOGIN) ---
 def main_app():
@@ -46,17 +58,29 @@ def main_app():
     # Cargar los datos del CSV (solo lectura)
     @st.cache_data
     def load_csv_data(file_path):
-        try:
-            # Usamos 'cp1252' (Windows-Latin-1) que es común para Excel en español.
-            return pd.read_csv(file_path, encoding='cp1252')
-        except FileNotFoundError:
-            st.error(f"Error: No se encontró el archivo {file_path}")
-            st.info("Asegúrate de que 'datos_centros.csv' esté en la carpeta principal del proyecto.")
-            return pd.DataFrame()
-        except Exception as e:
-            st.error(f"Error al leer el CSV: {e}")
-            st.info("Verifica que el archivo no esté corrupto.")
-            return pd.DataFrame()
+        encodings = ['utf-8', 'cp1252', 'iso-8859-1', 'latin-1']
+        
+        for encoding in encodings:
+            try:
+                return pd.read_csv(file_path, encoding=encoding)
+            except UnicodeDecodeError:
+                continue
+            except FileNotFoundError:
+                st.error(f"❌ Error: No se encontró el archivo {file_path}")
+                st.info("Asegúrate de que 'datos_centros.csv' esté en la carpeta principal del proyecto.")
+                return pd.DataFrame()
+            except pd.errors.EmptyDataError:
+                st.error(f"❌ Error: El archivo CSV está vacío.")
+                return pd.DataFrame()
+            except Exception as e:
+                st.error(f"❌ Error al leer el CSV: {e}")
+                st.info("Verifica que el archivo no esté corrupto.")
+                return pd.DataFrame()
+        
+        # Si ninguna codificación funcionó
+        st.error(f"❌ Error de codificación: No se puede determinar la codificación del archivo CSV.")
+        st.info("Verifica que el archivo esté en formato UTF-8, Windows-Latin-1 (cp1252), ISO-8859-1 o Latin-1.")
+        return pd.DataFrame()
 
     df_centros = load_csv_data("datos_centros.csv")
 
