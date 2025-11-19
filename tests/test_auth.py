@@ -1,10 +1,11 @@
 import sys
 import os
 import unittest
+from auth import hash_password, check_password
 
 # Add the parent directory to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-main
+
 
 class TestAuth(unittest.TestCase):
 

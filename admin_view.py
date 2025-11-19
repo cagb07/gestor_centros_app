@@ -1,6 +1,7 @@
 ﻿import streamlit as st
 import pandas as pd
 import database
+import db_helpers
 import auth
 import config
 import json
@@ -162,10 +163,11 @@ def show_ui(df_centros):
                 st.stop()
             
             template_name = st.text_input("Nombre de la Plantilla", placeholder="Ej: Reporte de Visita Técnica")
+            # Usar lista explícita de keys para evitar comportamientos inesperados
             template_area_id = st.selectbox(
                 "Asignar al Área:", 
-                options=area_options.keys(), 
-                format_func=lambda x: area_options[x]
+                options=list(area_options.keys()), 
+                format_func=lambda x: area_options.get(x, "<Área desconocida>")
             )
             
             st.subheader("Constructor de Campos")
@@ -203,22 +205,62 @@ def show_ui(df_centros):
                     st.error("El nombre de la plantilla es requerido.")
                 elif len(template_name.strip()) > config.MAX_TEMPLATE_NAME_LENGTH:
                     st.error(f"El nombre no puede exceder {config.MAX_TEMPLATE_NAME_LENGTH} caracteres.")
-                elif st.session_state.template_fields.empty:
-                    st.error("Debe agregar al menos un campo.")
                 else:
-                    structure = st.session_state.template_fields.to_dict('records')
-                    try:
-                        database.save_form_template(
-                            template_name.strip(),
-                            structure,
-                            st.session_state["user_id"],
-                            template_area_id
-                        )
-                        st.success(f"¡Plantilla '{template_name.strip()}' guardada!")
-                        del st.session_state.template_fields
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error al guardar: {e}")
+                    # Normalizar estructura desde la sesión (DataFrame o lista)
+                    raw_fields = st.session_state.get('template_fields')
+                    structure = None
+
+                    if raw_fields is None:
+                        st.error("Debe agregar al menos un campo.")
+                    else:
+                        try:
+                            if hasattr(raw_fields, 'to_dict'):
+                                structure = raw_fields.to_dict('records')
+                            elif isinstance(raw_fields, list):
+                                structure = raw_fields
+                            else:
+                                # Intentar convertir a lista de registros
+                                structure = list(raw_fields)
+                        except Exception:
+                            structure = None
+
+                    if not structure or len(structure) == 0:
+                        st.error("Debe agregar al menos un campo válido.")
+                    else:
+                        # Validaciones por campo
+                        invalid = False
+                        for i, f in enumerate(structure):
+                            label = f.get('Etiqueta del Campo') if isinstance(f, dict) else None
+                            ftype = f.get('Tipo de Campo') if isinstance(f, dict) else None
+                            req = f.get('Requerido') if isinstance(f, dict) else False
+
+                            if not label or not str(label).strip():
+                                st.error(f"Campo #{i+1}: la etiqueta es requerida.")
+                                invalid = True
+                                break
+                            if len(str(label).strip()) > config.MAX_FIELD_LABEL_LENGTH:
+                                st.error(f"Campo '{label}': la etiqueta excede {config.MAX_FIELD_LABEL_LENGTH} caracteres.")
+                                invalid = True
+                                break
+                            if ftype not in config.FIELD_TYPES:
+                                st.error(f"Campo '{label}': tipo de campo inválido.")
+                                invalid = True
+                                break
+
+                        if not invalid:
+                            try:
+                                database.save_form_template(
+                                    template_name.strip(),
+                                    structure,
+                                    st.session_state.get("user_id"),
+                                    template_area_id
+                                )
+                                st.success(f"¡Plantilla '{template_name.strip()}' guardada!")
+                                if 'template_fields' in st.session_state:
+                                    del st.session_state['template_fields']
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error al guardar: {e}")
             
             if clear_form:
                 st.session_state.template_fields = pd.DataFrame(
@@ -251,8 +293,47 @@ def show_ui(df_centros):
         st.divider()
         st.subheader("Áreas Existentes")
         try:
-            areas_df = pd.DataFrame(database.get_all_areas())
-            st.dataframe(areas_df.drop(columns=["description"]), use_container_width=True)
+            areas = database.get_all_areas()
+            areas_df = pd.DataFrame(areas)
+            if not areas_df.empty:
+                st.dataframe(areas_df.drop(columns=["description"]), use_container_width=True)
+
+                # Editar / Eliminar área
+                st.subheader("Editar / Eliminar Área")
+                area_ids = areas_df['id'].tolist()
+                selected_area = st.selectbox(
+                    "Selecciona un área:",
+                    options=area_ids,
+                    format_func=lambda x: areas_df[areas_df['id']==x]['name'].values[0]
+                )
+                area_row = next((a for a in areas if a['id'] == selected_area), None)
+                if area_row:
+                    new_name = st.text_input("Nombre del Área", value=area_row['name'], key="edit_area_name")
+                    new_desc = st.text_area("Descripción", value=area_row['description'] or "", key="edit_area_desc")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("Actualizar Área"):
+                            success, msg = db_helpers.update_area(selected_area, new_name.strip(), new_desc.strip())
+                            if success:
+                                st.success(msg)
+                                st.experimental_rerun()
+                            else:
+                                st.error(msg)
+                    with col2:
+                        confirm_key = f"confirm_delete_area_{selected_area}"
+                        st.checkbox("Confirmar eliminación (irreversible)", key=confirm_key)
+                        if st.button("Eliminar Área Definitivamente"):
+                            if st.session_state.get(confirm_key):
+                                success, msg = db_helpers.delete_area(selected_area)
+                                if success:
+                                    st.success(msg)
+                                    st.experimental_rerun()
+                                else:
+                                    st.error(msg)
+                            else:
+                                st.warning("Por favor confirma la eliminación marcando la casilla.")
+            else:
+                st.info("No hay áreas aún.")
         except Exception as e:
             st.error(f"Error al cargar áreas: {e}")
 
@@ -297,6 +378,48 @@ def show_ui(df_centros):
         try:
             users_df = database.get_all_users()
             st.dataframe(users_df, use_container_width=True)
+            if not users_df.empty:
+                st.subheader("Editar / Eliminar Usuario")
+                user_ids = users_df['id'].tolist()
+                selected_user = st.selectbox(
+                    "Selecciona un usuario:",
+                    options=user_ids,
+                    format_func=lambda x: f"{users_df[users_df['id']==x]['full_name'].values[0]} ({users_df[users_df['id']==x]['username'].values[0]})"
+                )
+                user_row = db_helpers.get_user_by_id(selected_user)
+                if user_row:
+                    new_full_name = st.text_input("Nombre completo", value=user_row.get('full_name',''), key='edit_user_fullname')
+                    try:
+                        current_index = list(config.ALLOWED_ROLES).index(user_row.get('role')) if user_row.get('role') in config.ALLOWED_ROLES else 0
+                    except Exception:
+                        current_index = 0
+                    new_role = st.selectbox("Rol", config.ALLOWED_ROLES, index=current_index, key='edit_user_role')
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("Actualizar Usuario"):
+                            success, msg = db_helpers.update_user(selected_user, role=new_role, full_name=new_full_name.strip())
+                            if success:
+                                st.success(msg)
+                                st.experimental_rerun()
+                            else:
+                                st.error(msg)
+                    with col2:
+                        confirm_key = f"confirm_delete_user_{selected_user}"
+                        st.checkbox("Confirmar eliminación (irreversible)", key=confirm_key)
+                        if st.button("Eliminar Usuario Definitivamente"):
+                            if st.session_state.get(confirm_key):
+                                # Prevent deleting yourself
+                                if selected_user == st.session_state.get('user_id'):
+                                    st.error("No puedes eliminar el usuario con el que estás autenticado.")
+                                else:
+                                    success, msg = db_helpers.delete_user(selected_user)
+                                    if success:
+                                        st.success(msg)
+                                        st.experimental_rerun()
+                                    else:
+                                        st.error(msg)
+                            else:
+                                st.warning("Por favor confirma la eliminación marcando la casilla.")
         except Exception as e:
             st.error(f"Error al cargar usuarios: {e}")
 
@@ -305,7 +428,7 @@ def show_ui(df_centros):
         st.header("📋 Revisión de Todos los Envíos")
         
         try:
-            all_submissions_df = database.get_all_submissions_with_details()
+            all_submissions_df = db_helpers.get_all_submissions_with_details()
             
             if all_submissions_df.empty:
                 st.info("ℹ️ Aún no se han realizado envíos de formularios.")
@@ -355,5 +478,64 @@ def show_ui(df_centros):
                     file_name="envios_formularios.csv",
                     mime="text/csv"
                 )
+                # Ver detalles de un envío individual
+                st.subheader("👁️ Ver Detalles de un Envío")
+                if len(df_filtered) > 0:
+                    selected_id = st.selectbox(
+                        "Selecciona un envío:",
+                        df_filtered['id'].unique(),
+                        format_func=lambda x: f"Envío {x} - {df_filtered[df_filtered['id']==x]['template_name'].values[0]}"
+                    )
+
+                    submission_data = df_filtered[df_filtered['id'] == selected_id]['data'].iloc[0]
+
+                    with st.expander("📄 Mostrar todos los datos del envío"):
+                        try:
+                            if isinstance(submission_data, str):
+                                import json as _json
+                                parsed = _json.loads(submission_data)
+                            else:
+                                parsed = submission_data
+
+                            if isinstance(parsed, dict):
+                                for key, value in parsed.items():
+                                    st.write(f"**{key}**: {value}")
+                            else:
+                                st.write(parsed)
+                        except Exception as e:
+                            st.error(f"No se pudo mostrar los datos del envío: {str(e)[:120]}")
+
+                    # Mostrar estado de revisión y permitir marcar
+                    try:
+                        row = df_filtered[df_filtered['id'] == selected_id].iloc[0]
+                        reviewed = bool(row.get('reviewed', False))
+                        reviewed_by = row.get('reviewed_by_name')
+                        reviewed_at = row.get('reviewed_at')
+
+                        st.markdown("**Estado de Revisión:** " + ("✅ Revisado" if reviewed else "❌ Pendiente"))
+                        if reviewed and reviewed_by:
+                            st.write(f"Revisado por: {reviewed_by} — {reviewed_at}")
+
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if not reviewed:
+                                if st.button("Marcar como Revisado", key=f"mark_reviewed_{selected_id}"):
+                                    success, msg = db_helpers.mark_submission_reviewed(selected_id, st.session_state.get('user_id'), reviewed=True)
+                                    if success:
+                                        st.success(msg)
+                                        st.experimental_rerun()
+                                    else:
+                                        st.error(msg)
+                            else:
+                                if st.button("Marcar como No Revisado", key=f"unmark_reviewed_{selected_id}"):
+                                    success, msg = db_helpers.mark_submission_reviewed(selected_id, st.session_state.get('user_id'), reviewed=False)
+                                    if success:
+                                        st.success(msg)
+                                        st.experimental_rerun()
+                                    else:
+                                        st.error(msg)
+                    except Exception:
+                        # Si algo falla al leer el estado, no romper la vista
+                        pass
         except Exception as e:
             st.error(f"❌ Error al cargar envíos: {str(e)[:100]}")

@@ -40,17 +40,21 @@
 
 ### 4️⃣ **Gestión de Áreas**
 - ✅ Crear nuevas áreas
+- ✅ **Editar áreas existentes** (Nombre + Descripción)
+- ✅ **Eliminar áreas** (con confirmación)
 - ✅ Validación de nombre y descripción
 - ✅ Lista de áreas existentes
 - ✅ Límites de longitud de caracteres
 
 ### 5️⃣ **Gestión de Usuarios**
 - ✅ Crear nuevos usuarios (operadores y admins)
+- ✅ **Editar usuarios** (Nombre Completo + Rol)
+- ✅ **Eliminar usuarios** (con confirmación, no permite autoeliminación)
 - ✅ Validaciones:
   - Nombre completo
   - Nombre de usuario (alfanumérico + guiones)
   - Contraseña (mínimo 8 caracteres)
-- ✅ Lista de usuarios existentes
+- ✅ Lista de usuarios existentes con opciones de gestión
 - ✅ Asignación de roles
 
 ### 6️⃣ **Revisión de Todos los Envíos**
@@ -63,6 +67,11 @@
   - Filtro múltiple por usuario
 - ✅ Tabla interactiva con scroll
 - ✅ **Descargar como CSV**
+- ✅ **Estado de revisión:**
+  - ✅ Revisado / ❌ Pendiente
+  - Metadata de auditoría (quién y cuándo)
+- ✅ **Marcar como Revisado/No Revisado** (botones interactivos)
+- ✅ Vista de detalles completos del envío
 - ✅ Manejo de errores
 
 ---
@@ -223,7 +232,30 @@
 
 ---
 
-## 🚀 Características Técnicas
+## ✅ **Nuevas Características: Auditoría y Revisión**
+
+### Estado de Envíos
+- ✅ Columnas en BD: `reviewed`, `reviewed_by`, `reviewed_at`
+- ✅ Indicadores visuales: ✅/❌ para estado de revisión
+- ✅ Metadata de auditoría: quién y cuándo marcó
+
+### Funciones Helper (`db_helpers.py`)
+- ✅ `mark_submission_reviewed()` - marcar envío como revisado/pendiente
+- ✅ `get_unreviewed_submissions()` - listar solo pendientes
+- ✅ `update_area()` - editar área existente
+- ✅ `delete_area()` - eliminar área
+- ✅ `get_user_by_id()` - obtener datos de usuario
+- ✅ `update_user()` - editar usuario
+- ✅ `delete_user()` - eliminar usuario
+
+### Migraciones de BD (Idempotentes)
+- ✅ ALTER TABLE con ADD COLUMN IF NOT EXISTS
+- ✅ No destruye datos existentes
+- ✅ Compatible con BDs nuevas y existentes
+- ✅ Inicialización segura en `init_db.py`
+
+---
+
 
 - ✅ Caché de datos con @st.cache_data
 - ✅ Validaciones de lado del cliente

@@ -53,10 +53,9 @@ def create_tables():
                 );
             """)
             
-            # Tabla de Usuarios (con reseteo)
-            cur.execute("DROP TABLE IF EXISTS usuarios CASCADE;")
+            # Tabla de Usuarios (crear si no existe — evitar borrados destructivos aquí)
             cur.execute("""
-                CREATE TABLE usuarios (
+                CREATE TABLE IF NOT EXISTS usuarios (
                     id SERIAL PRIMARY KEY,
                     username VARCHAR(50) UNIQUE NOT NULL,
                     password_hash VARCHAR(255) NOT NULL,
@@ -83,9 +82,17 @@ def create_tables():
                     template_id INTEGER REFERENCES form_templates(id),
                     user_id INTEGER REFERENCES usuarios(id),
                     data JSONB NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    reviewed BOOLEAN DEFAULT FALSE,
+                    reviewed_by INTEGER REFERENCES usuarios(id),
+                    reviewed_at TIMESTAMP
                 );
             """)
+            
+            # En caso de que la tabla ya existiera pero falten columnas (migración idempotente)
+            cur.execute("ALTER TABLE form_submissions ADD COLUMN IF NOT EXISTS reviewed BOOLEAN DEFAULT FALSE;")
+            cur.execute("ALTER TABLE form_submissions ADD COLUMN IF NOT EXISTS reviewed_by INTEGER;")
+            cur.execute("ALTER TABLE form_submissions ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMP;")
         conn.commit()
         print("✅ Tablas verificadas/creadas exitosamente.")
     except Exception as e:
@@ -198,7 +205,19 @@ def get_template_structure(template_id):
         cur.execute("SELECT structure FROM form_templates WHERE id = %s", (template_id,))
         res = cur.fetchone()
     # Sin conn.close()
-    return res[0] if res else None
+    if not res:
+        return None
+
+    structure = res[0]
+    # Si la estructura se almacenó como JSON serializado en texto, parsearla
+    try:
+        if isinstance(structure, (str, bytes)):
+            return json.loads(structure)
+    except Exception:
+        # Si falla el parseo, devolver tal cual (psycopg2 puede devolver ya un objeto Python)
+        pass
+
+    return structure
 
 # --- FUNCIONES DE ENVÍOS Y DASHBOARD ---
 
@@ -254,12 +273,15 @@ def get_submission_count_by_user():
 
 def get_all_submissions_with_details():
     conn = get_db_connection()
+    # Incluir también la columna `data` para poder mostrar detalles completos en la UI
     df = pd.read_sql("""
-        SELECT s.id, u.full_name as user_name, t.name as template_name, a.area_name, s.created_at
+        SELECT s.id, u.full_name as user_name, t.name as template_name, a.area_name, s.data, s.created_at,
+               s.reviewed, s.reviewed_at, ru.full_name as reviewed_by_name
         FROM form_submissions s
         JOIN usuarios u ON s.user_id = u.id
         JOIN form_templates t ON s.template_id = t.id
         JOIN form_areas a ON t.area_id = a.id
+        LEFT JOIN usuarios ru ON s.reviewed_by = ru.id
         ORDER BY s.created_at DESC
     """, conn)
     return df
